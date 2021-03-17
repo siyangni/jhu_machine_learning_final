@@ -1,0 +1,234 @@
+---
+title: "Machine Learning Final Project"
+author: "Siyang Ni"
+date: "3/16/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Executive Summary
+
+This is the report for the final project of the Practical Machine Learning course at John Hopkins University. This document was created using RStudio, and all the codes are based on R version 4.0.3. In this project, we show the process of training a machine learning algorithm that predict people's exercise habit using personal activity data collected by smart wearable prodcuts such as Apple Watch. This report contains the following sections:
+
+1. Data Source
+2. Data Preparation
+3. Exploratory Analysis
+4. Model Building
+5. Model Evaluation
+6. Conclusion
+6. Recommendation
+
+The above sections are presented in a way that reflect the data science pipeline.
+
+## Data Source
+
+Human Activity Recognition (HAR) has emerged as a key research area in the past years and is gaining increasing attention. Devices like Jawbone Up, Nike FuelBand, and Fitbit are now possible to collect a large amount of data about personal activity relatively inexpensively. 
+
+In this project, we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information related to the data for this course project is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+
+## Data Preperation
+
+These are the packages that will be used in this project
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse) # Misc
+library(lattice) # Graphing
+library(caret) # Machine Learning
+library(rpart) # Recursive Partitioning
+library(rpart.plot) # Graphing
+library(corrplot) # Bivariate Analysis
+library(rattle) # Misc
+library(randomForest) # Modeling
+library(nnet) # Regression
+library(MLmetrics)
+library(RColorBrewer) # Graphing
+library(xgboost)
+
+set.seed(188)
+```
+
+The data is accessed from the following source:
+
+```{r}
+url_train <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url_test  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+training <- read.csv(url(url_train), strip.white = TRUE, na.strings = c("NA",""))
+testing <- read.csv(url(url_test),  strip.white = TRUE, na.strings = c("NA",""))
+
+dim(training)
+dim(testing)
+```
+
+Now, we further split the training set into training set and calibration set.
+
+```{r}
+cal_index <- createDataPartition(training$classe, p=.25, list=FALSE)
+training1 <- training[-cal_index, ]
+calibration <- training[cal_index, ]
+
+dim(training1)
+dim(calibration)
+```
+
+Now, we check the missing value condition. Our analysis shows (code shown below) that for our training set, features are either have zero missing values or have too many missing values (over 90% of values are missing).
+
+```{r}
+# Column-wise missing value check
+sapply(training1, function(x) sum(is.na(x)))
+```
+
+Therefore, it is not meaningful to conduct data imputation here. We will just discard those features that have missing values and keep only features that have zero missing value, as it is shown below:
+
+```{r}
+na_var <- sapply(training1, function(x) mean(is.na(x))) > 0.90
+training2 <- training1[ ,na_var == FALSE]
+calibration1 <- calibration[ ,na_var == FALSE]
+
+dim(training2)
+dim(calibration1)
+
+```
+
+We can see now there is no missing value in the training set and calibration set now. As it is shown below:
+
+```{r}
+sapply(training2, function(x) sum(is.na(x)))
+sapply(calibration1, function(x) sum(is.na(x)))
+```
+
+Take a closer look at our training set, we can see there are also several near-zero-variance predictors that may affect our model building process later on. As it is shown below. Notice that while I decide on which feature is near-zero-variance feature, I use a more aggressive cutoff value than the default cutoff for both the ratio between the most common value and the second-most-common value (freqCut=2), as well as the percentage of distinct values out of the total sample size (uniqueCut=2). 
+
+```{r}
+nzv <- nearZeroVar(training2, saveMetrics = TRUE, freqCut = 2, uniqueCut = 20)
+nzv[nzv$nzv==TRUE | nzv$zeroVar==TRUE, ]
+```
+
+We now remove these near-zero-variance features, for both the training set and the calibration set.
+
+```{r}
+training3 <- training2[, nzv$nzv==FALSE]
+calibration2  <- calibration1[ , nzv$nzv==FALSE]
+```
+
+We can see now there is no near-zero-variance feature in both the training set and the calibration set, as it is shown below:
+
+```{r}
+nzv_check_train <- nearZeroVar(training3, saveMetrics = TRUE, freqCut = 2, uniqueCut = 20)
+TRUE %in% nzv_check_train$nzv
+
+nzv_check_cal <- nearZeroVar(calibration2, saveMetrics = TRUE, freqCut = 2, uniqueCut = 20)
+TRUE %in% nzv_check_cal$nzv
+```
+
+Because we are going to construct a correlation matrix in the next section, we also extract the first five columns. These columns are just identification information. They will be saved. In a real-world data science project, these identification information will later be added back to the database.
+
+```{r}
+tr <- training3[, -(1:5)]
+cal <- calibration2[, -(1:5)]
+
+dim(tr)
+dim(cal)
+```
+
+As it is shown above, after data preparation, we eventually keep 48 features for model building. Now we will perform some exploratory analysis
+
+## Exploratory Data Analysis
+
+Before any actual model building exercise, it is always good to check the bivariate correlations between features. From the correlation matrix plot shown below we can see that most features are not significantly correlated to each other. Therefore, the multicollinearity issue is not serious. In addition, we now have 14715 observations in our training set, but only 48 features. The discussion above suggest that it should be proper to go ahead without performing dimensionality reduction, such as Singular Vector Decomposition (SVD) and Principal Component Analysis (PCA).
+
+```{r}
+corr_matrix <- cor(tr[ , -48])
+corrplot(corr_matrix, order = "FPC", method = "circle", type = "lower",
+         tl.cex = 0.6, tl.col = rgb(0, 0, 0))
+```
+
+Now, we can begin training our models.
+
+## Model Buidling
+
+A good start for any model training process is the linear model. We now fit a multinomial logistic model to our training set, and use it as a baseline.
+
+```{r}
+tr$classe <- as.factor(tr$classe)
+tr$classe <- relevel(tr$classe, ref = "A")
+fit_mln <- multinom(classe ~ ., data = tr)
+
+pred <- predict(fit_mln, tr)
+conf_m <- confusionMatrix(pred, tr$classe)
+conf_m$overall
+```
+
+Now, we can see that using a simple multinomial logistic model, we have an overall accuracy rate at about 67.95%, as it is shown above. This is not bad, but can certainly be improved. Let's try a more complicated linear model- the Linear Discriminant Analysis (LDA). 
+
+```{r}
+fit_lda <- train(classe ~ ., data = tr, method = "lda")
+pred <- predict(fit_lda, tr)
+confusionMatrix(pred, tr$classe)$overall
+```
+
+By using LDA, we can achieve an overall accuracy of about 70%, as it is shown above. Not much improvement from the logistic model. It must be that the data is not linear in nature, and more advanced machine learning model should be used to best capture the nonlinearity of the data. We should now consider the tree-based models.
+
+We start from the basic decision tree model. 
+
+```{r}
+set.seed(666)
+fit_dt <- rpart(classe ~ ., data = tr, method="class")
+fancyRpartPlot(fit_dt)
+```
+
+Since our model is not simple (not super complex either), the decision tree plot gets complicated, and is hard to interpret. We will measure the goodness of fit by statistics. 
+
+```{r}
+pred <- predict(fit_dt, tr, type="class")
+confusionMatrix(pred, tr$classe)$overall
+F1_Score(pred, tr$classe)
+```
+
+From above, we can see that both the overall accuracy and the F1_score is unsatisfactory for the basic decision tree model. It is even lower than the linear models! Let's try the most advanced decision tree model (as far as my knowledge on machine learning allows): the Gradient-Boosted Tree Model (not covered in the course content). 
+
+```{r}
+set.seed(666)
+
+fit_xgboost <- caret::train(classe ~ .,
+                      data = tr,
+                      method = "gbm",
+                      trControl = trainControl(method = "repeatedcv", 
+                                             number = 5, 
+                                             repeats = 3, 
+                                             verboseIter = FALSE),
+                      verbose = 0)
+
+
+fit_xgboost
+```
+
+Gradient-Boosted Tree Model has three tuning parameters: the number of trees (n.trees), the number of splits (interaction.depth), and learning rate (shrinkage). the train function automatically uses cross-validation to select the parameters for us that provide the best performance. From the above model fitting result, we can see that, if we train the model with 150 trees, 3 splits, and 0.1 learning rate, we can get a overall accuracy of around 99%. Another evaluation metric Cohen's Kappa Score (Kappa) also reaches 0.98. This is exciting! Given the prediction performance, we decide to use Gradient_Boosted Tree Model as our final choice. 
+
+## Model Evaluation
+
+However, we must be cautious, because we know that Gradient_boosted Tree Model is prone to overfit in nature. Therefore, before we move any further, we now test our model on the calibration set we have left untouched up to this point.
+
+```{r}
+pred_cal <- predict(fit_xgboost, cal)
+confusionMatrix(pred_cal, factor(cal$classe))
+F1_Score(pred_cal, factor(cal$classe))
+```
+
+Our model also gives out amazing prediction for the calibration set. The overall accuracy reaches 98.63%. The cohen's Kappa is about 0.986. Additionally, the F1 score is 0.997. We now can feel more certain that now our model fits the data well, and can give out very satisfactory performance. 
+
+One last task is to fit this model to the test set we have reserved, so the quiz questions can be answered. This also provide an extra opprtunity to test the reliability of our model's performance.
+
+```{r}
+pred_test <- as.data.frame(predict(fit_xgboost, testing))
+pred_test
+```
+
+Our algorithm got all the 20 quiz questions right. This again shows our model can predict well.
+
+## Conclusion
+
+The above sections show that the Gradient_Boosted Tree Model provides satisfactory prediction on individuals' exercise manner given their movement recorded by the accelerometers. The overall accuracy given by the Gradient-Boosted Tree Model on the calibration data reaches 98.63%. However, given the algorithm of Gradient-Boosted Tree Model tends to overfit in nature, we should expect the actual performance of our model be much lower than 98.63%. 
