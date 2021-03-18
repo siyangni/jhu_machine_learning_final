@@ -43,6 +43,7 @@ library(corrplot) # Bivariate Analysis
 library(rattle) # Misc
 library(randomForest) # Modeling
 library(nnet) # Regression
+library(ranger)
 library(MLmetrics)
 library(RColorBrewer) # Graphing
 library(xgboost)
@@ -153,26 +154,37 @@ Now, we can begin training our models.
 A good start for any model training process is the linear model. We now fit a multinomial logistic model to our training set, and use it as a baseline.
 
 ```{r}
+set.seed(666)
 tr$classe <- as.factor(tr$classe)
 tr$classe <- relevel(tr$classe, ref = "A")
 fit_mln <- multinom(classe ~ ., data = tr)
 
-pred <- predict(fit_mln, tr)
-conf_m <- confusionMatrix(pred, tr$classe)
+pred_mln <- predict(fit_mln, tr)
+conf_m <- confusionMatrix(pred_mln, tr$classe)
 conf_m$overall
 ```
 
 Now, we can see that using a simple multinomial logistic model, we have an overall accuracy rate at about 67.95%, as it is shown above. This is not bad, but can certainly be improved. Let's try a more complicated linear model- the Linear Discriminant Analysis (LDA). 
 
 ```{r}
+set.seed(666)
 fit_lda <- train(classe ~ ., data = tr, method = "lda")
-pred <- predict(fit_lda, tr)
-confusionMatrix(pred, tr$classe)$overall
+pred_lda <- predict(fit_lda, tr)
+confusionMatrix(pred_lda, tr$classe)$overall
 ```
 
-By using LDA, we can achieve an overall accuracy of about 70%, as it is shown above. Not much improvement from the logistic model. It must be that the data is not linear in nature, and more advanced machine learning model should be used to best capture the nonlinearity of the data. We should now consider the tree-based models.
+By using LDA, we can achieve an overall accuracy of about 70%, as it is shown above. Not much improvement from the logistic model. Let's try another linear method: Quadratic Discriminant Analysis (QDA).
 
-We start from the basic decision tree model. 
+```{r}
+set.seed(666)
+fit_qda <- train(classe ~ ., data = tr, method = "qda")
+pred_qda <- predict(fit_qda, tr)
+confusionMatrix(pred_qda, tr$classe)$overall
+```
+
+We can see that by using QDA, we can boost our prediction performance up to about 87%. However, if we want to do better, we must delve into more advanced machine learning models that could capture the nonlinearity of the data. 
+
+Let's try tree models. We start from the basic decision tree model. 
 
 ```{r}
 set.seed(666)
@@ -183,12 +195,29 @@ fancyRpartPlot(fit_dt)
 Since our model is not simple (not super complex either), the decision tree plot gets complicated, and is hard to interpret. We will measure the goodness of fit by statistics. 
 
 ```{r}
-pred <- predict(fit_dt, tr, type="class")
-confusionMatrix(pred, tr$classe)$overall
-F1_Score(pred, tr$classe)
+pred_dt <- predict(fit_dt, tr, type="class")
+confusionMatrix(pred_dt, tr$classe)$overall
+F1_Score(pred_dt, tr$classe)
 ```
 
-From above, we can see that both the overall accuracy and the F1_score is unsatisfactory for the basic decision tree model. It is even lower than the linear models! Let's try the most advanced decision tree model (as far as my knowledge on machine learning allows): the Gradient-Boosted Tree Model (not covered in the course content). 
+From above, we can see that both the overall accuracy and the F1_score is unsatisfactory for the basic decision tree model. It is even lower than the linear models! Let's try the Random Forest Model.
+
+```{r}
+set.seed(688)
+
+control_rf <- trainControl(method="cv", number=3, verboseIter=FALSE)
+# It takes some times to run
+fit_rf <- train(x=tr[,1:47], y=tr$classe, method = "ranger",
+                trControl = control_rf)
+
+pred_rf <- predict(fit_rf, tr)
+fit_rf
+confusionMatrix(pred_rf, tr$classe)$overall
+```
+
+We can see from above that with random forest model, given Number of variables available for splitting at each tree node (mtry) equals 24, we can reach a surprisingly high accuracy, which is over 99%. Note that in this project, we used the "ranger" package, which is a fast implantation of Random Forest. We have tried the classical "randomForest" package, but it takes too much comuting resources, which is beyond our equipment's computing ability. 
+
+Let's try one last algorithm: the Gradient-Boosted Tree Model (not covered in the course content). Per our experience, the Gradient-Boosted Tree Model usually also have satisfactory prediction performance. 
 
 ```{r}
 set.seed(666)
@@ -202,33 +231,103 @@ fit_xgboost <- caret::train(classe ~ .,
                                              verboseIter = FALSE),
                       verbose = 0)
 
-
-fit_xgboost
+pred_xgboost <- predict(fit_xgboost, tr)
+confusionMatrix(pred_xgboost, tr$classe)
 ```
 
-Gradient-Boosted Tree Model has three tuning parameters: the number of trees (n.trees), the number of splits (interaction.depth), and learning rate (shrinkage). the train function automatically uses cross-validation to select the parameters for us that provide the best performance. From the above model fitting result, we can see that, if we train the model with 150 trees, 3 splits, and 0.1 learning rate, we can get a overall accuracy of around 99%. Another evaluation metric Cohen's Kappa Score (Kappa) also reaches 0.98. This is exciting! Given the prediction performance, we decide to use Gradient_Boosted Tree Model as our final choice. 
+Gradient-Boosted Tree Model has three tuning parameters: the number of trees (n.trees), the number of splits (interaction.depth), and learning rate (shrinkage). the train function automatically uses cross-validation to select the parameters for us that provide the best performance. From the above model fitting result, we can see that, if we train the model with 150 trees, 3 splits, and 0.1 learning rate, we can get a overall accuracy of around 99%. Another evaluation metric Cohen's Kappa Score (Kappa) also reaches 0.98. This is exciting! 
 
 ## Model Evaluation
 
-However, we must be cautious, because we know that Gradient_boosted Tree Model is prone to overfit in nature. Therefore, before we move any further, we now test our model on the calibration set we have left untouched up to this point.
+However, we must be cautious, because we know that our top performers Gradient_Boosted Tree Model and Random Forest are prone to overfit in nature. Therefore, before we move any further, we now test our models on the calibration set we have left untouched up to this point.
+
+First, let's see how Gradient_Boosted Tree Model performs on the calibration set:
 
 ```{r}
-pred_cal <- predict(fit_xgboost, cal)
-confusionMatrix(pred_cal, factor(cal$classe))
-F1_Score(pred_cal, factor(cal$classe))
+pred_c_xgboost <- predict(fit_xgboost, cal)
+confusionMatrix(pred_c_xgboost, factor(cal$classe))$overall
+F1_Score(pred_c_xgboost, factor(cal$classe))
 ```
 
-Our model also gives out amazing prediction for the calibration set. The overall accuracy reaches 98.63%. The cohen's Kappa is about 0.986. Additionally, the F1 score is 0.997. We now can feel more certain that now our model fits the data well, and can give out very satisfactory performance. 
-
-One last task is to fit this model to the test set we have reserved, so the quiz questions can be answered. This also provide an extra opprtunity to test the reliability of our model's performance.
+The Gradient_Boosted Tree Model also gives out amazing prediction for the calibration set. The overall accuracy reaches 98.63%. The cohen's Kappa is about 0.986. Additionally, the F1 score is 0.997. Now let's see how Random Forest model perform on the calibration set:
 
 ```{r}
-pred_test <- as.data.frame(predict(fit_xgboost, testing))
+pred_c_rf <- predict(fit_rf, cal)
+confusionMatrix(pred_c_rf, factor(cal$classe))$overall
+```
+
+From the above result we can also see that the Random Forest Model also performs almost perfectly on the calibration set, with a total accuracy rate of around 99.8%
+
+Now Let's see how other models perform
+
+```{r}
+# for logistic model
+pred_c_mln <- predict(fit_mln, cal)
+confusionMatrix(pred_c_mln, factor(cal$classe))$overall
+
+# for LDA
+pred_c_lda <- predict(fit_lda, cal)
+confusionMatrix(pred_c_lda, factor(cal$classe))$overall
+
+# for QDA
+pred_c_qda <- predict(fit_qda, cal)
+confusionMatrix(pred_c_qda, factor(cal$classe))$overall
+
+# for Decision Tree
+pred_c_dt <- predict(fit_dt, cal, type='class')
+confusionMatrix(pred_c_dt, factor(cal$classe))$overall
+```
+
+From the above result, it is reasonable to believe that all the models we have built on the test data does not show significant performance downgrade once we fit them to the calibration data.
+
+Finally, we build an ensemble based on majority vote. This simple ensemble will consult what each model predicts and then make its decision based on what the majority of all the models we have built so far vote for. For those observations where our six models cannot reach a 50% majority vote, we accept the predictions of the top performing model- Random Forest Model. 
+
+```{r}
+model <- c("pred_c_mln", "pred_c_lda", "pred_c_qda",
+           "pred_c_dt", "pred_c_rf", "pred_c_xgboost")
+pred <- sapply(1:6, function(x){
+  as.factor(get(model[x]))})
+
+dim(pred)
+
+pred <- as.data.frame(pred)
+names(pred) <-c("pred_c_mln", "pred_c_lda", "pred_c_qda",
+           "pred_c_dt", "pred_c_rf", "pred_c_xgboost")
+acc <- colMeans(as.matrix(pred)==cal$classe)
+acc
+
+mean(acc)
+
+pred_ensemble <- data.frame(pred=NULL)
+
+pred$pred_c_ensemble <- 0
+n <- 1:nrow(pred)
+x <- c('A', 'B', 'C', 'D', 'E')
+
+for (a in x){
+  for (i in n){
+    if (mean(pred[i,]==a)>0.5){
+        pred[i,7] <- a} 
+  }
+}
+
+pred[pred$pred_c_ensemble==0,7] <- pred[pred$pred_c_ensemble==0,5]
+
+confusionMatrix(factor(pred$pred_c_ensemble), factor(cal$classe))$overall
+```
+
+The above result indicates that the majority vote ensemble model has an overall accuracy of about 97% and a Cohen's Kappa of about 0.96. This is a little inferior to the prediction performance of the Random Forest model and the Gradient-Boosted Tree Model. Therefore, for this final project, **we would recommend the Random Forest Model**, which slightly beat the Random Forest Model. However, we believe the ensemble model is less likely to overfit in the real world.
+
+One last task is to fit this model to the test set we have reserved, so the quiz questions can be answered. This also provide an extra opportunity to test the reliability of our model of choice's performance.
+
+```{r}
+pred_test <- as.data.frame(predict(fit_rf, testing))
 pred_test
 ```
 
-Our algorithm got all the 20 quiz questions right. This again shows our model can predict well.
+Our algorithm got all the 20 quiz questions right. This again shows the Rnadom Forest Model we built can predict well.
 
 ## Conclusion
 
-The above sections show that the Gradient_Boosted Tree Model provides satisfactory prediction on individuals' exercise manner given their movement recorded by the accelerometers. The overall accuracy given by the Gradient-Boosted Tree Model on the calibration data reaches 98.63%. However, given the algorithm of Gradient-Boosted Tree Model tends to overfit in nature, we should expect the actual performance of our model be much lower than 98.63%. 
+The above sections show that the Random Forest Model provides satisfactory prediction on individuals' exercise manner given their movement recorded by the accelerometers. **The overall accuracy given by the Random Forest Model on the calibration data reaches 99.8%.** However, given the algorithm of Random Forest Model tends to overfit in nature, we should expect the actual performance of our model be lower than 99.8%. **The ensemble Model based on the majority vote of all six models built in this project should be an ideal alternative to the Random Forest Model.** 
+
