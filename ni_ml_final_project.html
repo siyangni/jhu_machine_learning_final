@@ -201,11 +201,10 @@ summary {
 <ol style="list-style-type: decimal">
 <li>Data Source</li>
 <li>Data Preparation</li>
-<li>Exploratory Analysis</li>
+<li>Exploratory Data Analysis</li>
 <li>Model Building</li>
 <li>Model Evaluation</li>
 <li>Conclusion</li>
-<li>Recommendation</li>
 <li>References</li>
 </ol>
 <p>The above sections are intentionally presented in a way that reflects the data science pipeline suggested by the Cross-industry Standard Process for Data Mining (CRISP_DM) (Shearer 2000).</p>
@@ -500,6 +499,8 @@ corrplot(corr_matrix, order = &quot;FPC&quot;, method = &quot;circle&quot;, type
 </div>
 <div id="model-buidling" class="section level2">
 <h2>Model Buidling</h2>
+<div id="generalized-linear-model-glm" class="section level3">
+<h3>Generalized Linear Model (GLM)</h3>
 <p>A good start for any model training process is the linear model. We now fit a Multinomial Logistic Model to our training set, and use it as a baseline.</p>
 <pre class="r"><code>set.seed(666)
 tr$classe &lt;- as.factor(tr$classe)
@@ -526,7 +527,11 @@ conf_m$overall</code></pre>
 ##   6.795107e-01   5.929171e-01   6.719018e-01   6.870486e-01   2.844037e-01 
 ## AccuracyPValue  McnemarPValue 
 ##   0.000000e+00  1.476108e-133</code></pre>
-<p>Now, we can see that using a simple Multinomial Logistic Model, we achieve an overall accuracy of about 67.95% on our training set, as it is shown above. This is not bad, but can certainly be improved. Let’s try a more complicated linear model- the Linear Discriminant Analysis (LDA).</p>
+<p>Now, we can see that using a simple Multinomial Logistic Model, we achieve an overall accuracy of about 67.95% on our training set, as it is shown above. This is not bad, but can certainly be improved.</p>
+</div>
+<div id="linear-discriminant-analysis-lda" class="section level3">
+<h3>Linear Discriminant Analysis (LDA)</h3>
+<p>Let’s try a more complicated linear model- the Linear Discriminant Analysis (LDA).</p>
 <pre class="r"><code>set.seed(666)
 fit_lda &lt;- train(classe ~ ., data = tr, method = &quot;lda&quot;)
 pred_lda &lt;- predict(fit_lda, tr)
@@ -535,7 +540,11 @@ confusionMatrix(pred_lda, tr$classe)$overall</code></pre>
 ##   7.032960e-01   6.237705e-01   6.958416e-01   7.106699e-01   2.844037e-01 
 ## AccuracyPValue  McnemarPValue 
 ##   0.000000e+00  9.250318e-145</code></pre>
-<p>By using LDA, we can achieve an overall accuracy of about 70%, as it is shown above. Not much improvement from the logistic model. Let’s try another linear model: Quadratic Discriminant Analysis (QDA).</p>
+<p>By using LDA, we can achieve an overall accuracy of about 70%, as it is shown above. Not much improvement from the logistic model.</p>
+</div>
+<div id="quadratic-discriminant-analysis-qda" class="section level3">
+<h3>Quadratic Discriminant Analysis (QDA)</h3>
+<p>Let’s try another linear model: Quadratic Discriminant Analysis (QDA).</p>
 <pre class="r"><code>set.seed(666)
 fit_qda &lt;- train(classe ~ ., data = tr, method = &quot;qda&quot;)
 pred_qda &lt;- predict(fit_qda, tr)
@@ -545,6 +554,9 @@ confusionMatrix(pred_qda, tr$classe)$overall</code></pre>
 ## AccuracyPValue  McnemarPValue 
 ##   0.000000e+00  9.149099e-223</code></pre>
 <p>By using QDA, we can boost our prediction performance up to about 87%. However, if we want to do better, we must delve into more advanced machine learning models that could capture the non-linearity of the data.</p>
+</div>
+<div id="desicion-tree-model" class="section level3">
+<h3>Desicion Tree Model</h3>
 <p>Let’s try tree models. We start from the basic decision tree model.</p>
 <pre class="r"><code>set.seed(666)
 fit_dt &lt;- rpart(classe ~ ., data = tr, method=&quot;class&quot;)
@@ -559,7 +571,11 @@ confusionMatrix(pred_dt, tr$classe)$overall</code></pre>
 ##   0.000000e+00   1.891569e-97</code></pre>
 <pre class="r"><code>F1_Score(pred_dt, tr$classe)</code></pre>
 <pre><code>## [1] 0.6967846</code></pre>
-<p>From above, we can see that both the overall accuracy and the F1_score is unsatisfactory for the basic decision tree model. It is even lower than the linear models! Let’s try the Random Forest Model.</p>
+<p>From above, we can see that both the overall accuracy and the F1_score is unsatisfactory for the basic decision tree model. It is even lower than the linear models!</p>
+</div>
+<div id="random-forest-model" class="section level3">
+<h3>Random Forest Model</h3>
+<p>Let’s try the Random Forest Model.</p>
 <pre class="r"><code>set.seed(688)
 
 control_rf &lt;- trainControl(method=&quot;cv&quot;, number=3, verboseIter=FALSE)
@@ -602,6 +618,9 @@ fit_rf</code></pre>
 ## AccuracyPValue  McnemarPValue 
 ##      0.0000000            NaN</code></pre>
 <p>We can see from above that with the Random Forest Model, given the number of variables available for splitting at each tree node (mtry) equals to 24, we can reach a surprisingly high accuracy, which is over 99%. Note that in this project, we used the <code>ranger</code> package, which is a fast implementation of the Random Forest algorithm. We have tried the classical <code>randomForest</code> package, but it takes too much computing resources, which is beyond our equipment’s computing ability.</p>
+</div>
+<div id="gradient-boosted-tree-model" class="section level3">
+<h3>Gradient-Boosted Tree Model</h3>
 <p>Let’s try one last algorithm: the Gradient-Boosted Tree Model (not covered in the course content). Per our experience, the Gradient-Boosted Tree Model usually also has a satisfactory prediction performance.</p>
 <pre class="r"><code>set.seed(666)
 
@@ -650,9 +669,12 @@ confusionMatrix(pred_xgboost, tr$classe)</code></pre>
 ## Balanced Accuracy      0.9991   0.9932   0.9947   0.9899   0.9928</code></pre>
 <p>The Gradient-Boosted Tree Model has three tuning parameters: the number of trees (n.trees), the number of splits (interaction.depth), and learning rate (shrinkage). The <code>train</code> function in <code>caret</code> automatically uses cross-validation to select the parameters for us that provide the best performance. From the above model fitting result, we can see that, if we train the model with 150 trees, 3 splits, and 0.1 learning rate, we can get an overall accuracy of around 99%. Another evaluation metric Cohen’s Kappa Score (Kappa) also reaches 0.98. This is exciting!</p>
 </div>
+</div>
 <div id="model-evaluation" class="section level2">
 <h2>Model Evaluation</h2>
 <p>However, we must be cautious, because we know that our top performers the Gradient_Boosted Tree Model and the Random Forest Model are prone to overfit in nature. Therefore, before we move any further, we now test our models on the calibration set we have left untouched up to this point.</p>
+<div id="model-performance-on-the-calibration-set" class="section level3">
+<h3>Model Performance on the Calibration Set</h3>
 <p>First, let’s see how the Gradient_Boosted Tree Model performs on the calibration set:</p>
 <pre class="r"><code>pred_c_xgboost &lt;- predict(fit_xgboost, cal)
 confusionMatrix(pred_c_xgboost, factor(cal$classe))$overall</code></pre>
@@ -700,6 +722,9 @@ confusionMatrix(pred_c_dt, factor(cal$classe))$overall</code></pre>
 ## AccuracyPValue  McnemarPValue 
 ##   0.000000e+00   1.398610e-26</code></pre>
 <p>From the above results, it is reasonable to believe that all the models we have built on the training data does not show significant performance degradation while testing on the calibration data.</p>
+</div>
+<div id="ensemble" class="section level3">
+<h3>Ensemble</h3>
 <p>Finally, we construct an ensemble based on the majority vote of all the models we have built, which includes the Multinomial Logistic Model, the LDA Model, the QDA Model, the Decision Tree Model, the Random Forest Model, and the Gradient-Boosted Tree Model. This simple ensemble consults what each model predicts and then makes its decision based on what the majority of all the models we have built so far vote for. For those observations where our six models cannot reach a over 50% majority vote, we accept the predictions of the top performing model- the Random Forest Model.</p>
 <pre class="r"><code>model &lt;- c(&quot;pred_c_mln&quot;, &quot;pred_c_lda&quot;, &quot;pred_c_qda&quot;,
            &quot;pred_c_dt&quot;, &quot;pred_c_rf&quot;, &quot;pred_c_xgboost&quot;)
@@ -737,7 +762,11 @@ confusionMatrix(factor(pred$pred_c_ensemble), factor(cal$classe))$overall</code>
 ## AccuracyPValue  McnemarPValue 
 ##      0.0000000            NaN</code></pre>
 <p>The above result indicates that the majority vote ensemble model has an overall accuracy of about 97% and a Cohen’s Kappa of about 0.96. This is a little inferior to the prediction performance of the Random Forest Model and the Gradient-Boosted Tree Model. Therefore, for this final project, <strong>we would recommend the Random Forest Model</strong>, which slightly beat the Gradient_Boosted Tree Model and the ensemble model.</p>
-<p>However, <strong>we believe the ensemble model is less likely to overfit in the real world</strong>, compared to the Random Forest Model and the Gradient-Boosted Tree Model. This is because the ensemble also takes into account what the simpler models predict when gives out prediction. Although simpler models like the linear models do not predict as well as the more complex machine learning models like the Gradient-Boosted Tree Model, they are less prone to overfit because they do not attempt to catch every tiny variation of the training data. One last task is to evaluate the Random Forest Model using the test set we have reserved, so the quiz questions can be answered. This also provides an extra opportunity to test the reliability of our model of choice’s performance. Below, we use the Random Forest Model to predict exercise habit using the test set.</p>
+<p>However, <strong>we believe the ensemble model is less likely to overfit in the real world</strong>, compared to the Random Forest Model and the Gradient-Boosted Tree Model. This is because the ensemble also takes into account what the simpler models predict when gives out prediction. Although simpler models like the linear models do not predict as well as the more complex machine learning models like the Gradient-Boosted Tree Model, they are less prone to overfit because they do not attempt to catch every tiny variation of the training data.</p>
+</div>
+<div id="model-performance-on-the-test-set" class="section level3">
+<h3>Model Performance on the Test Set</h3>
+<p>One last task is to evaluate the Random Forest Model using the test set we have reserved, so the quiz questions can be answered. This also provides an extra opportunity to test the reliability of our model of choice’s performance. Below, we use the Random Forest Model to predict exercise habit using the test set.</p>
 <pre class="r"><code>pred_test &lt;- as.data.frame(predict(fit_rf, testing))
 pred_test</code></pre>
 <pre><code>##    predict(fit_rf, testing)
@@ -762,6 +791,7 @@ pred_test</code></pre>
 ## 19                        B
 ## 20                        B</code></pre>
 <p>Our algorithm got all the 20 quiz questions right. This again shows the Random Forest Model we built can predict well.</p>
+</div>
 </div>
 <div id="conclusion" class="section level2">
 <h2>Conclusion</h2>
