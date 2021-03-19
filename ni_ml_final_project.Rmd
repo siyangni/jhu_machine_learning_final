@@ -11,7 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Executive Summary
 
-This is the report for the final project of the Practical Machine Learning course at John Hopkins University. This document was created using RStudio, and all the codes are based on R version 4.0.3. In this project, we show the process of training a machine learning algorithm that predict people's exercise habit using personal activity data collected by smart wearable prodcuts such as Apple Watch. This report contains the following sections:
+This is the report for the final project of the Practical Machine Learning course at John Hopkins University. This document was created using RStudio, and all the codes are based on R version 4.0.3. In this project, we show the process of training a machine learning algorithm that predict people's exercise habit using personal activity data collected by smart wearable products such as Apple Watch. This report contains the following sections:
 
 1. Data Source
 2. Data Preparation
@@ -20,14 +20,15 @@ This is the report for the final project of the Practical Machine Learning cours
 5. Model Evaluation
 6. Conclusion
 6. Recommendation
+7. References
 
-The above sections are presented in a way that reflect the data science pipeline.
+The above sections are intentionally presented in a way that reflects the data science pipeline suggested by the Cross-industry Standard Process for Data Mining (CRISP_DM) (Shearer 2000).
 
 ## Data Source
 
 Human Activity Recognition (HAR) has emerged as a key research area in the past years and is gaining increasing attention. Devices like Jawbone Up, Nike FuelBand, and Fitbit are now possible to collect a large amount of data about personal activity relatively inexpensively. 
 
-In this project, we use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information related to the data for this course project is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+In this project, we use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information related to the data for this course project is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset) (Ugulino et al. 2012). 
 
 ## Data Preperation
 
@@ -43,10 +44,10 @@ library(corrplot) # Bivariate Analysis
 library(rattle) # Misc
 library(randomForest) # Modeling
 library(nnet) # Regression
-library(ranger)
-library(MLmetrics)
+library(ranger) # Random Forest C++ Implementation
+library(MLmetrics) # Model Evaluation
 library(RColorBrewer) # Graphing
-library(xgboost)
+library(xgboost) # Gradient Boosted Algorithm
 
 set.seed(188)
 ```
@@ -60,17 +61,19 @@ url_test  <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.cs
 training <- read.csv(url(url_train), strip.white = TRUE, na.strings = c("NA",""))
 testing <- read.csv(url(url_test),  strip.white = TRUE, na.strings = c("NA",""))
 
+# Check the Dimensions
 dim(training)
 dim(testing)
 ```
 
-Now, we further split the training set into training set and calibration set.
+Now, we further split the training set into training set and calibration set. The testing data will be saved for answering the quiz questions accompanied the final project assessment of this course. 
 
 ```{r}
 cal_index <- createDataPartition(training$classe, p=.25, list=FALSE)
 training1 <- training[-cal_index, ]
 calibration <- training[cal_index, ]
 
+# Check dimensions again
 dim(training1)
 dim(calibration)
 ```
@@ -82,7 +85,7 @@ Now, we check the missing value condition. Our analysis shows (code shown below)
 sapply(training1, function(x) sum(is.na(x)))
 ```
 
-Therefore, it is not meaningful to conduct data imputation here. We will just discard those features that have missing values and keep only features that have zero missing value, as it is shown below:
+Therefore, it is not meaningful to conduct data imputation here. **We will just discard those features that have missing values and keep only features that have zero missing value**, as it is shown below:
 
 ```{r}
 na_var <- sapply(training1, function(x) mean(is.na(x))) > 0.90
@@ -94,14 +97,14 @@ dim(calibration1)
 
 ```
 
-We can see now there is no missing value in the training set and calibration set now. As it is shown below:
+We can see now there is no missing value in the training set and calibration set now, as it is shown below:
 
 ```{r}
 sapply(training2, function(x) sum(is.na(x)))
 sapply(calibration1, function(x) sum(is.na(x)))
 ```
 
-Take a closer look at our training set, we can see there are also several near-zero-variance predictors that may affect our model building process later on. As it is shown below. Notice that while I decide on which feature is near-zero-variance feature, I use a more aggressive cutoff value than the default cutoff for both the ratio between the most common value and the second-most-common value (freqCut=2), as well as the percentage of distinct values out of the total sample size (uniqueCut=2). 
+Take a closer look at our training set, we can see there are also several near-zero-variance predictors that may affect our model building process later on, as it is presented below. Notice that when we decided on which feature is near-zero-variance feature, we used a more aggressive cutoff value than the default cutoff for both the ratio between the most common value and the second-most-common value (freqCut=2), as well as the percentage of distinct values out of the total sample size (uniqueCut=20). 
 
 ```{r}
 nzv <- nearZeroVar(training2, saveMetrics = TRUE, freqCut = 2, uniqueCut = 20)
@@ -125,7 +128,7 @@ nzv_check_cal <- nearZeroVar(calibration2, saveMetrics = TRUE, freqCut = 2, uniq
 TRUE %in% nzv_check_cal$nzv
 ```
 
-Because we are going to construct a correlation matrix in the next section, we also extract the first five columns. These columns are just identification information. They will be saved. In a real-world data science project, these identification information will later be added back to the database.
+Because we are going to construct a correlation matrix in the next section, we also extract the first five columns. These columns are just identification information. In a real-world data science project, these identification information will later be added back to the database.
 
 ```{r}
 tr <- training3[, -(1:5)]
@@ -139,7 +142,7 @@ As it is shown above, after data preparation, we eventually keep 48 features for
 
 ## Exploratory Data Analysis
 
-Before any actual model building exercise, it is always good to check the bivariate correlations between features. From the correlation matrix plot shown below we can see that most features are not significantly correlated to each other. Therefore, the multicollinearity issue is not serious. In addition, we now have 14715 observations in our training set, but only 48 features. The discussion above suggest that it should be proper to go ahead without performing dimensionality reduction, such as Singular Vector Decomposition (SVD) and Principal Component Analysis (PCA).
+Before any actual model building exercise, it is always good to check the bivariate correlations between features. From the correlation matrix plot shown below we can see that most features are not significantly correlated to each other. Therefore, **the multicollinearity issue is not serious**. In addition, we now have 14715 observations in our training set, but only 48 features. The discussion above suggests that it should be proper to go ahead without performing dimensionality reduction, such as Singular Vector Decomposition (SVD) or Principal Component Analysis (PCA).
 
 ```{r}
 corr_matrix <- cor(tr[ , -48])
@@ -164,7 +167,7 @@ conf_m <- confusionMatrix(pred_mln, tr$classe)
 conf_m$overall
 ```
 
-Now, we can see that using a simple multinomial logistic model, we have an overall accuracy rate at about 67.95%, as it is shown above. This is not bad, but can certainly be improved. Let's try a more complicated linear model- the Linear Discriminant Analysis (LDA). 
+Now, we can see that using a simple multinomial logistic model, we achieve an overall accuracy of about 67.95% on our training set, as it is shown above. This is not bad, but can certainly be improved. Let's try a more complicated linear model- the Linear Discriminant Analysis (LDA). 
 
 ```{r}
 set.seed(666)
@@ -173,7 +176,7 @@ pred_lda <- predict(fit_lda, tr)
 confusionMatrix(pred_lda, tr$classe)$overall
 ```
 
-By using LDA, we can achieve an overall accuracy of about 70%, as it is shown above. Not much improvement from the logistic model. Let's try another linear method: Quadratic Discriminant Analysis (QDA).
+By using LDA, we can achieve an overall accuracy of about 70%, as it is shown above. Not much improvement from the logistic model. Let's try another linear model: Quadratic Discriminant Analysis (QDA).
 
 ```{r}
 set.seed(666)
@@ -182,7 +185,7 @@ pred_qda <- predict(fit_qda, tr)
 confusionMatrix(pred_qda, tr$classe)$overall
 ```
 
-We can see that by using QDA, we can boost our prediction performance up to about 87%. However, if we want to do better, we must delve into more advanced machine learning models that could capture the nonlinearity of the data. 
+By using QDA, we can boost our prediction performance up to about 87%. However, if we want to do better, we must delve into more advanced machine learning models that could capture the nonlinearity of the data. 
 
 Let's try tree models. We start from the basic decision tree model. 
 
@@ -192,7 +195,7 @@ fit_dt <- rpart(classe ~ ., data = tr, method="class")
 fancyRpartPlot(fit_dt)
 ```
 
-Since our model is not simple (not super complex either), the decision tree plot gets complicated, and is hard to interpret. We will measure the goodness of fit by statistics. 
+Since our model is not simple (not very complex either), the decision tree plot gets complicated, and is hard to interpret. We will measure the goodness of fit by statistics. 
 
 ```{r}
 pred_dt <- predict(fit_dt, tr, type="class")
@@ -206,7 +209,7 @@ From above, we can see that both the overall accuracy and the F1_score is unsati
 set.seed(688)
 
 control_rf <- trainControl(method="cv", number=3, verboseIter=FALSE)
-# It takes some times to run
+# It takes some times to run the following code
 fit_rf <- train(x=tr[,1:47], y=tr$classe, method = "ranger",
                 trControl = control_rf)
 
@@ -215,7 +218,7 @@ fit_rf
 confusionMatrix(pred_rf, tr$classe)$overall
 ```
 
-We can see from above that with random forest model, given Number of variables available for splitting at each tree node (mtry) equals 24, we can reach a surprisingly high accuracy, which is over 99%. Note that in this project, we used the "ranger" package, which is a fast implantation of Random Forest. We have tried the classical "randomForest" package, but it takes too much comuting resources, which is beyond our equipment's computing ability. 
+We can see from above that with random forest model, given Number of variables available for splitting at each tree node (mtry) equals 24, we can reach a surprisingly high accuracy, which is over 99%. Note that in this project, we used the `ranger` package, which is a fast implantation of Random Forest. We have tried the classical `randomForest` package, but it takes too much computing resources, which is beyond our equipment's computing ability. 
 
 Let's try one last algorithm: the Gradient-Boosted Tree Model (not covered in the course content). Per our experience, the Gradient-Boosted Tree Model usually also have satisfactory prediction performance. 
 
@@ -235,13 +238,13 @@ pred_xgboost <- predict(fit_xgboost, tr)
 confusionMatrix(pred_xgboost, tr$classe)
 ```
 
-Gradient-Boosted Tree Model has three tuning parameters: the number of trees (n.trees), the number of splits (interaction.depth), and learning rate (shrinkage). the train function automatically uses cross-validation to select the parameters for us that provide the best performance. From the above model fitting result, we can see that, if we train the model with 150 trees, 3 splits, and 0.1 learning rate, we can get a overall accuracy of around 99%. Another evaluation metric Cohen's Kappa Score (Kappa) also reaches 0.98. This is exciting! 
+The Gradient-Boosted Tree Model has three tuning parameters: the number of trees (n.trees), the number of splits (interaction.depth), and learning rate (shrinkage). The `train` function in `caret` automatically uses cross-validation to select the parameters for us that provide the best performance. From the above model fitting result, we can see that, if we train the model with 150 trees, 3 splits, and 0.1 learning rate, we can get an overall accuracy of around 99%. Another evaluation metric Cohen's Kappa Score (Kappa) also reaches 0.98. This is exciting! 
 
 ## Model Evaluation
 
-However, we must be cautious, because we know that our top performers Gradient_Boosted Tree Model and Random Forest are prone to overfit in nature. Therefore, before we move any further, we now test our models on the calibration set we have left untouched up to this point.
+However, we must be cautious, because we know that our top performers the Gradient_Boosted Tree Model and Random Forest are prone to overfit in nature. Therefore, before we move any further, we now test our models on the calibration set we have left untouched up to this point.
 
-First, let's see how Gradient_Boosted Tree Model performs on the calibration set:
+First, let's see how the Gradient_Boosted Tree Model performs on the calibration set:
 
 ```{r}
 pred_c_xgboost <- predict(fit_xgboost, cal)
@@ -249,14 +252,14 @@ confusionMatrix(pred_c_xgboost, factor(cal$classe))$overall
 F1_Score(pred_c_xgboost, factor(cal$classe))
 ```
 
-The Gradient_Boosted Tree Model also gives out amazing prediction for the calibration set. The overall accuracy reaches 98.63%. The cohen's Kappa is about 0.986. Additionally, the F1 score is 0.997. Now let's see how Random Forest model perform on the calibration set:
+The Gradient_Boosted Tree Model gives out amazing prediction performance for the calibration set, as it's shown above. The overall accuracy reaches 98.63%. The Cohen's Kappa is about 0.986. Additionally, the F1 Score is 0.997. Now let's see how the Random Forest model performs on the calibration set:
 
 ```{r}
 pred_c_rf <- predict(fit_rf, cal)
 confusionMatrix(pred_c_rf, factor(cal$classe))$overall
 ```
 
-From the above result we can also see that the Random Forest Model also performs almost perfectly on the calibration set, with a total accuracy rate of around 99.8%
+From the above result we can see that the Random Forest Model also performs almost perfectly on the calibration set, with a total accuracy rate of around 99.8%
 
 Now Let's see how other models perform
 
@@ -278,9 +281,9 @@ pred_c_dt <- predict(fit_dt, cal, type='class')
 confusionMatrix(pred_c_dt, factor(cal$classe))$overall
 ```
 
-From the above result, it is reasonable to believe that all the models we have built on the test data does not show significant performance downgrade once we fit them to the calibration data.
+From the above results, it is reasonable to believe that all the models we have built on the test data does not show significant performance degradation once we fit them to the calibration data.
 
-Finally, we build an ensemble based on majority vote. This simple ensemble will consult what each model predicts and then make its decision based on what the majority of all the models we have built so far vote for. For those observations where our six models cannot reach a 50% majority vote, we accept the predictions of the top performing model- Random Forest Model. 
+Finally, we build an ensemble based on the majority vote of all the models we have built, which includes the Multinomial Logistic Model, the LDA Model, the QDA Model, the Decision Tree Model, the Random Forest Model, and the Gradient-Bostted Tree Model. This simple ensemble will consult what each model predicts and then makes its decision based on what the majority of all the models we have built so far vote for. For those observations where our six models cannot reach a 50% majority vote, we accept the predictions of the top performing model- the Random Forest Model. 
 
 ```{r}
 model <- c("pred_c_mln", "pred_c_lda", "pred_c_qda",
@@ -294,9 +297,9 @@ pred <- as.data.frame(pred)
 names(pred) <-c("pred_c_mln", "pred_c_lda", "pred_c_qda",
            "pred_c_dt", "pred_c_rf", "pred_c_xgboost")
 acc <- colMeans(as.matrix(pred)==cal$classe)
-acc
 
-mean(acc)
+# acc
+# mean(acc)
 
 pred_ensemble <- data.frame(pred=NULL)
 
@@ -316,18 +319,23 @@ pred[pred$pred_c_ensemble==0,7] <- pred[pred$pred_c_ensemble==0,5]
 confusionMatrix(factor(pred$pred_c_ensemble), factor(cal$classe))$overall
 ```
 
-The above result indicates that the majority vote ensemble model has an overall accuracy of about 97% and a Cohen's Kappa of about 0.96. This is a little inferior to the prediction performance of the Random Forest model and the Gradient-Boosted Tree Model. Therefore, for this final project, **we would recommend the Random Forest Model**, which slightly beat the Random Forest Model. However, we believe the ensemble model is less likely to overfit in the real world.
+The above result indicates that the majority vote ensemble model has an overall accuracy of about 97% and a Cohen's Kappa of about 0.96. This is a little inferior to the prediction performance of the Random Forest Model and the Gradient-Boosted Tree Model. Therefore, for this final project, **we would recommend the Random Forest Model**, which slightly beat the Gradient_Boosted Tree Model and the ensemble model. However, we believe the ensemble model is less likely to overfit in the real world, compared to the Random Forest Model and the Gradient-Boosted Tree Model.
 
-One last task is to fit this model to the test set we have reserved, so the quiz questions can be answered. This also provide an extra opportunity to test the reliability of our model of choice's performance.
+One last task is to evaluate the Random Forest Model using the test set we have reserved, so the quiz questions can be answered. This also provides an extra opportunity to test the reliability of our model of choice's performance. Below, we use the Random Forest Model to predict exercise habit using the test set.
 
 ```{r}
 pred_test <- as.data.frame(predict(fit_rf, testing))
 pred_test
 ```
 
-Our algorithm got all the 20 quiz questions right. This again shows the Rnadom Forest Model we built can predict well.
+Our algorithm got all the 20 quiz questions right. This again shows the Random Forest Model we built can predict well.
 
 ## Conclusion
 
-The above sections show that the Random Forest Model provides satisfactory prediction on individuals' exercise manner given their movement recorded by the accelerometers. **The overall accuracy given by the Random Forest Model on the calibration data reaches 99.8%.** However, given the algorithm of Random Forest Model tends to overfit in nature, we should expect the actual performance of our model be lower than 99.8%. **The ensemble Model based on the majority vote of all six models built in this project should be an ideal alternative to the Random Forest Model.** 
+The above sections show that the Random Forest Model provides satisfactory prediction on individuals' exercise manner given their movement recorded by the accelerometers. **The overall accuracy given by the Random Forest Model on the calibration data reaches 99.8%.** However, given the algorithm of Random Forest Model tends to overfit in nature, we should expect the actual performance of our model to be lower than 99.8%. **The ensemble Model based on the majority vote of all six models built in this project should be an ideal alternative to the Random Forest Model.** 
 
+## References
+
+Shearer C., The CRISP-DM model: the new blueprint for data mining, J Data        Warehousing, 2000. 5:13—22.
+
+Ugulino, W.; Cardador, D.; Vega, K.; Velloso, E.; Milidiu, R.; Fuks, H.          Wearable Computing: Accelerometers' Data Classification of Body Postures and   Movements. Proceedings of 21st Brazilian Symposium on Artificial               Intelligence. Advances in Artificial Intelligence - SBIA 2012. In: Lecture     Notes in Computer Science. , pp. 52-61. Curitiba, PR: Springer Berlin /        Heidelberg, 2012. ISBN 978-3-642-34458-9. DOI: 10.1007/978-3-642-34459-6_6.
